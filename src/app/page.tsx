@@ -34,10 +34,10 @@ export default function Home() {
   const [theme, setTheme] = useState('')
   const [platform, setPlatform] = useState('Threads')
   const [tone, setTone] = useState('Sayaka Angel (やさしい)')
-  
+
   // 新規入力（Notion用）
   const [productName, setProductName] = useState('')
-  const [productFeatures, setProductFeatures] = useState('') 
+  const [productFeatures, setProductFeatures] = useState('')
   const [productUrl, setProductUrl] = useState('')
   const [timeSlot, setTimeSlot] = useState('18時')
   const [evaluation, setEvaluation] = useState('')
@@ -63,9 +63,9 @@ export default function Home() {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          theme, 
-          platform, 
+        body: JSON.stringify({
+          theme,
+          platform,
           tone,
           productName,
           productFeatures,
@@ -262,12 +262,7 @@ export default function Home() {
 
             <div className={styles.postBox}>
               <h3 style={{ fontSize: '0.9rem', color: '#888', marginBottom: '10px' }}>Threads投稿文</h3>
-              <p className={styles.postText}>{result.post}</p>
-              <p className={styles.postHashtags}>
-                {result.hashtags.map((h, i) => (
-                  <span key={i} className={styles.hashtag}>#{h.replace(/^#/, '')}</span>
-                ))}
-              </p>
+              <p className={styles.postText}>{result.fullText}</p>
             </div>
 
             <div className={styles.postBox} style={{ border: 'none', background: 'rgba(255,255,255,0.03)', marginTop: '10px' }}>
@@ -290,7 +285,7 @@ export default function Home() {
               <button className={styles.copyBtn} onClick={copyToClipboard} style={{ flex: 1 }}>
                 {copied ? '✓ コピーしました！' : '全文をコピー'}
               </button>
-              
+
               <button
                 className={styles.btn}
                 style={{ background: notionSaved ? '#43e97b' : '#333', flex: 2 }}
