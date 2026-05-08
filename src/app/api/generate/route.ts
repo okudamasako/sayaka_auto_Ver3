@@ -5,14 +5,14 @@ import { fetchRecentPosts } from '@/lib/notion'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { 
-      theme, 
-      platform, 
-      tone, 
-      productName, 
-      productFeatures, 
-      productUrl, 
-      timeSlot 
+    const {
+      theme,
+      platform,
+      tone,
+      productName,
+      productFeatures,
+      productUrl,
+      timeSlot
     } = body
 
     if (!theme || !platform) {
@@ -26,13 +26,13 @@ export async function POST(req: NextRequest) {
 
     // Notionから過去の投稿を取得
     const recentPosts = await fetchRecentPosts(30)
-    const pastContext = recentPosts.length > 0 
+    const pastContext = recentPosts.length > 0
       ? recentPosts.map((p: any) => `- テーマ: ${p.theme}\n  1行目: ${p.usedHook}\n  締め文: ${p.usedClosing}\n  タグ: ${p.hashtags}`).join('\n')
       : '過去の投稿データはありません。'
 
     const openai = new OpenAI({ apiKey })
     const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini'
-    
+
     const systemPrompt = `あなたはSNS運用アシスタント「Sayaka Angel」です。
 30代の大人女性をターゲットに、やさしく寄り添い、否定しない共感のトーンで投稿文を生成します。
 
@@ -67,14 +67,30 @@ Threadsでは1行目でスクロールを止めることを最優先しますが
 3. 「じつは、〜」で始まる、気づきや解決のきっかけ
 4. 商品を暮らしの中にそっと添える（18時以外は商品に触れなくても可）
 5. やさしく、静かに締める。
-6. 商品URLを単独行で配置する。
+
+【最重要ルール】
+投稿文の最後に、必ず商品URLを1行でそのまま出力してください。
+URLは省略・改変・短縮説明禁止。
+URLが存在しない場合は「URL未入力」と表示してください。
+勝手に省略しないこと。
+
+出力形式：
+（投稿本文）
+
+{商品URL}
+
+#ハッシュタグ
+#ハッシュタグ
+#ハッシュタグ
+#ハッシュタグ
+#ハッシュタグ
 
 【出力形式（JSON）】
 必ず以下のJSON形式で出力してください。
 
 {
-  "threadsPost": "Threads用の投稿本文（200文字前後）。構成遵守。URLは最後に単独行。",
-  "instagramPost": "Instagram用の投稿本文。Threadsをベースに改行と余白をさらに増やしたもの。",
+  "threadsPost": "Threads用の投稿本文（200文字前後）。本文の後に空行を挟み、URLを最後に配置する。ハッシュタグは含めない。",
+  "instagramPost": "Instagram用の投稿本文。Threadsをベースに改行と余白をさらに増やしたもの。URLを最後に配置する。",
   "reelText": "リール用テキスト（10文字以内×4行。改行区切り）。",
   "bgm": "CapCut検索用BGM候補5つ（カンマ区切り）。",
   "imagePrompt": "画像生成用プロンプト（英語）。人物なし、静かな情景。",
@@ -97,7 +113,14 @@ Threadsでは1行目でスクロールを止めることを最優先しますが
 テーマ: ${theme}
 商品名: ${productName || 'なし'}
 商品特徴: ${productFeatures || 'なし'}
-商品URL: ${productUrl || ''}
+商品URL: ${productUrl || '未入力'}
+
+【最重要ルール】
+投稿文の最後に、必ず商品URLを1行でそのまま出力してください。
+URLは省略・改変・短縮説明禁止。
+URLが存在しない場合は「URL未入力」と表示してください。
+勝手に省略しないこと。
+
 文体: ${tone || 'Sayaka Angel (やさしい)'}
 
 【過去の投稿データ（これらと重複させないでください）】
@@ -121,9 +144,9 @@ ${pastContext}
 
     // 簡易的な類似チェック（1行目の重複チェック）
     const isDuplicate = recentPosts.some((p: any) => p.usedHook === result.usedHook)
-    
-    // 生成されたタグを整形
-    const formattedHashtags = result.hashtags.map((h: string) => `#${h.replace(/^#/, '')}`).join(' ')
+
+    // 生成されたタグを整形（1行ずつ表示）
+    const formattedHashtags = result.hashtags.map((h: string) => `#${h.replace(/^#/, '')}`).join('\n')
     const fullText = `${result.threadsPost}\n\n${formattedHashtags}`
 
     const now = new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
@@ -141,7 +164,7 @@ ${pastContext}
       usedClosing: result.usedClosing,
       fullText,
       // 旧フロントエンド互換性のためのtipsフィールド
-      tips: `【Instagram本文】\n${result.instagramPost}\n\n【リール文】\n${result.reelText}\n\n【BGM候補】\n${result.bgm}\n\n【画像生成プロンプト】\n${result.imagePrompt}\n\n【Instagramハッシュタグ】\n${result.hashtags.join(' ')}`,
+      tips: `【Instagram本文】\n${result.instagramPost}\n\n【リール文】\n${result.reelText}\n\n【BGM候補】\n${result.bgm}\n\n【画像生成プロンプト】\n${result.imagePrompt}\n\n【Instagramハッシュタグ】\n${result.hashtags.map((h: string) => `#${h.replace(/^#/, '')}`).join('\n')}`,
       meta: {
         theme,
         platform,
