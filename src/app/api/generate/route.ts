@@ -147,7 +147,8 @@ ${pastContext}
 
     // 生成されたタグを整形（1行ずつ表示）
     const formattedHashtags = result.hashtags.map((h: string) => `#${h.replace(/^#/, '')}`).join('\n')
-    const fullText = `${result.threadsPost}\n\n${formattedHashtags}`
+    const displayUrl = productUrl?.trim() || 'URL未入力'
+    const fullText = `${result.threadsPost}\n\n${displayUrl}\n\n${formattedHashtags}`
 
     const now = new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
 
