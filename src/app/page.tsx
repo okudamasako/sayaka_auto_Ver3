@@ -44,6 +44,7 @@ export default function Home() {
 
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
+  const [editedPost, setEditedPost] = useState('')
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
 
@@ -56,6 +57,7 @@ export default function Home() {
     setLoading(true)
     setError('')
     setResult(null)
+    setEditedPost('')
     setNotionSaved(false)
     setEvaluation('')
 
@@ -79,6 +81,7 @@ export default function Home() {
         return
       }
       setResult(data)
+      setEditedPost(data.fullText)
     } catch (e) {
       console.error('Fetch error:', e)
       setError('ネットワークエラーが発生しました')
@@ -98,7 +101,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           theme: theme,
-          threadsPost: result.post,
+          threadsPost: editedPost,
           instagramPost: result.instagramPost,
           reelText: result.reelText,
           bgm: result.bgm,
@@ -129,7 +132,7 @@ export default function Home() {
 
   const copyToClipboard = () => {
     if (!result) return
-    navigator.clipboard.writeText(result.fullText)
+    navigator.clipboard.writeText(editedPost)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -261,8 +264,13 @@ export default function Home() {
             </div>
 
             <div className={styles.postBox}>
-              <h3 style={{ fontSize: '0.9rem', color: '#888', marginBottom: '10px' }}>Threads投稿文</h3>
-              <p className={styles.postText}>{result.fullText}</p>
+              <h3 style={{ fontSize: '0.9rem', color: '#888', marginBottom: '10px' }}>Threads投稿文 <span style={{ fontSize: '0.75rem', color: '#666' }}>（編集できます）</span></h3>
+              <textarea
+                className={styles.input}
+                style={{ minHeight: '220px', background: 'rgba(255,255,255,0.05)', fontSize: '0.9rem', lineHeight: '1.8', whiteSpace: 'pre-wrap' }}
+                value={editedPost}
+                onChange={e => setEditedPost(e.target.value)}
+              />
             </div>
 
             <div className={styles.postBox} style={{ border: 'none', background: 'rgba(255,255,255,0.03)', marginTop: '10px' }}>
