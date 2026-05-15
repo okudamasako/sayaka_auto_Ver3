@@ -45,6 +45,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
   const [editedPost, setEditedPost] = useState('')
+  const [editedTips, setEditedTips] = useState('')
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
 
@@ -58,6 +59,7 @@ export default function Home() {
     setError('')
     setResult(null)
     setEditedPost('')
+    setEditedTips('')
     setNotionSaved(false)
     setEvaluation('')
 
@@ -82,6 +84,7 @@ export default function Home() {
       }
       setResult(data)
       setEditedPost(data.fullText)
+      setEditedTips(data.tips)
     } catch (e) {
       console.error('Fetch error:', e)
       setError('ネットワークエラーが発生しました')
@@ -102,7 +105,7 @@ export default function Home() {
         body: JSON.stringify({
           theme: theme,
           threadsPost: editedPost,
-          instagramPost: result.instagramPost,
+          instagramPost: editedTips,
           reelText: result.reelText,
           bgm: result.bgm,
           imagePrompt: result.imagePrompt,
@@ -274,8 +277,13 @@ export default function Home() {
             </div>
 
             <div className={styles.postBox} style={{ border: 'none', background: 'rgba(255,255,255,0.03)', marginTop: '10px' }}>
-              <h3 style={{ fontSize: '0.9rem', color: '#888', marginBottom: '10px' }}>Instagram/リール用詳細</h3>
-              <p className={styles.tipsText}>{result.tips}</p>
+              <h3 style={{ fontSize: '0.9rem', color: '#888', marginBottom: '10px' }}>Instagram/リール用詳細 <span style={{ fontSize: '0.75rem', color: '#666' }}>（編集できます）</span></h3>
+              <textarea
+                className={styles.input}
+                style={{ minHeight: '260px', background: 'rgba(255,255,255,0.05)', fontSize: '0.85rem', lineHeight: '1.8', whiteSpace: 'pre-wrap' }}
+                value={editedTips}
+                onChange={e => setEditedTips(e.target.value)}
+              />
             </div>
 
             <div className={styles.formGroup} style={{ marginTop: '20px' }}>
