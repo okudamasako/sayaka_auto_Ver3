@@ -204,11 +204,19 @@ ${pastContext}
     const raw = completion.choices[0].message.content || '{}'
     const result = JSON.parse(raw)
 
+    // hashtags が配列でない場合（文字列や undefined）を安全に正規化
+    const rawHashtags = result.hashtags
+    const hashtagsArray: string[] = Array.isArray(rawHashtags)
+      ? rawHashtags
+      : typeof rawHashtags === 'string'
+        ? rawHashtags.split(/[\s,　]+/).filter(Boolean)
+        : []
+
     // 簡易的な類似チェック（1行目の重複チェック）
     const isDuplicate = recentPosts.some((p: any) => p.usedHook === result.usedHook)
 
     // 生成されたタグを整形（1行ずつ表示）
-    const formattedHashtags = result.hashtags.map((h: string) => `#${h.replace(/^#/, '')}`).join('\n')
+    const formattedHashtags = hashtagsArray.map((h: string) => `#${h.replace(/^#/, '')}`).join('\n')
     const displayUrl = productUrl?.trim() || 'URL未入力'
     const fullText = `${result.threadsPost}\n\n${displayUrl}\n\n${formattedHashtags}`
 
@@ -222,12 +230,11 @@ ${pastContext}
       reelText: result.reelText,
       bgm: result.bgm,
       imagePrompt: result.imagePrompt,
-      hashtags: result.hashtags,
+      hashtags: hashtagsArray,
       usedHook: result.usedHook,
       usedClosing: result.usedClosing,
       fullText,
-      // 旧フロントエンド互換性のためのtipsフィールド
-      tips: `【Instagram本文】\n${result.instagramPost}\n\n【リール文】\n${result.reelText}\n\n【BGM候補】\n${result.bgm}\n\n【画像生成プロンプト】\n${result.imagePrompt}\n\n【Instagramハッシュタグ】\n${result.hashtags.map((h: string) => `#${h.replace(/^#/, '')}`).join('\n')}`,
+      tips: `【Instagram本文】\n${result.instagramPost}\n\n【リール文】\n${result.reelText}\n\n【BGM候補】\n${result.bgm}\n\n【画像生成プロンプト】\n${result.imagePrompt}\n\n【Instagramハッシュタグ】\n${hashtagsArray.map((h: string) => `#${h.replace(/^#/, '')}`).join('\n')}`,
       meta: {
         theme,
         platform,
