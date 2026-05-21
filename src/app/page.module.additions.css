@@ -142,3 +142,175 @@
 .linkBtn:hover {
   color: #ccc;
 }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   page.module.css への追記分（既存CSSの末尾に追加）
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+/* ── 時間帯グリッド ── */
+.timeslotGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.timeslotBtn {
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #777;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.timeslotBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ccc;
+}
+
+/* ✅ 選択中：紫・チェックマーク付き */
+.timeslotBtnActive {
+  background: rgba(180, 140, 255, 0.25) !important;
+  border: 2px solid #b48cff !important;
+  color: #e0d0ff !important;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(180, 140, 255, 0.3);
+  position: relative;
+}
+
+.timeslotBtnActive::after {
+  content: ' ✓';
+  font-size: 0.8em;
+  opacity: 0.9;
+}
+
+/* ── 時間帯ノート ── */
+.timeslotNote {
+  margin-top: 10px;
+  font-size: 0.78rem;
+  color: #888;
+  line-height: 1.5;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  border-left: 2px solid rgba(180, 140, 255, 0.4);
+}
+
+/* ── 記念日ボタン ── */
+.anniversaryList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.anniversaryBtn {
+  padding: 11px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #999;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.anniversaryBtn:hover {
+  background: rgba(255, 200, 100, 0.08);
+  border-color: rgba(255, 200, 100, 0.3);
+  color: #ddd;
+}
+
+/* ✅ 選択中：オレンジ・左ライン強調 */
+.anniversaryBtnActive {
+  background: rgba(255, 200, 100, 0.18) !important;
+  border: 2px solid #ffc864 !important;
+  border-left: 4px solid #ffc864 !important;
+  color: #ffe0a0 !important;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(255, 200, 100, 0.2);
+  padding-left: 14px;
+}
+
+.anniversaryBtnActive::before {
+  content: '▶ ';
+  font-size: 0.7em;
+  opacity: 0.8;
+}
+
+/* ── AI変換テーマボタン ── */
+.themeList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.themeBtn {
+  padding: 12px 16px;
+  background: rgba(100, 200, 255, 0.04);
+  border: 1px solid rgba(100, 200, 255, 0.1);
+  border-radius: 8px;
+  color: #888;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  line-height: 1.6;
+}
+
+.themeBtn:hover {
+  background: rgba(100, 200, 255, 0.1);
+  border-color: rgba(100, 200, 255, 0.3);
+  color: #ddd;
+}
+
+/* ✅ 選択中：水色・グロー効果 */
+.themeBtnActive {
+  background: rgba(100, 200, 255, 0.2) !important;
+  border: 2px solid #64c8ff !important;
+  color: #c0eaff !important;
+  font-weight: 700;
+  box-shadow: 0 0 12px rgba(100, 200, 255, 0.25);
+}
+
+.themeBtnActive::before {
+  content: '✦ ';
+  font-size: 0.8em;
+  color: #64c8ff;
+}
+
+/* ── セカンダリボタン ── */
+.btnSecondary {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #ccc !important;
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.btnSecondary:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* ── テキストリンク風ボタン ── */
+.linkBtn {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 2px 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.2s;
+}
+
+.linkBtn:hover {
+  color: #ccc;
+}
