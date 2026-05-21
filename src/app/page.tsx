@@ -379,13 +379,13 @@ const anniversaryData: Record<string, string[]> = {
 const PLATFORMS = ['Threads', 'Instagram', 'X (Twitter)']
 const TONES = ['Sayaka Angel (やさしい)', 'カジュアル', 'ビジネス']
 const TIMESLOT_OPTIONS = [
-  { value: '7only', label: '7:00のみ' },
-  { value: '7and12', label: '7:00 と 12:00' },
-  { value: '18', label: '18:00（商品紹介）' },
-  { value: '21', label: '21:00（商品紹介）' },
+  { value: '7',  label: '7:00',  note: '恋愛・自己肯定・やさしい関係性' },
+  { value: '12', label: '12:00', note: '価値観・暮らしの気づき・仕事観' },
+  { value: '18', label: '18:00', note: '商品紹介枠' },
+  { value: '21', label: '21:00', note: '商品紹介枠' },
 ]
 
-type TimeslotType = '7only' | '7and12' | '18' | '21'
+type TimeslotType = '7' | '12' | '18' | '21'
 
 interface Result {
   success: boolean
@@ -429,7 +429,7 @@ export default function Home() {
   const [themesLoading, setThemesLoading] = useState(false)
 
   // ── 時間帯 ──
-  const [timeslot, setTimeslot] = useState<TimeslotType>('7only')
+  const [timeslot, setTimeslot] = useState<TimeslotType>('7')
 
   // ── 商品情報 ──
   const [productName, setProductName] = useState('')
@@ -491,7 +491,10 @@ export default function Home() {
     setError('')
 
     const isProductSlot = timeslot === '18' || timeslot === '21'
-    const slotLabel = timeslot === '7only' ? '7:00' : timeslot === '7and12' ? '7:00と12:00' : timeslot === '18' ? '18:00' : '21:00'
+    const slotLabel =
+      timeslot === '7'  ? '7:00'  :
+      timeslot === '12' ? '12:00' :
+      timeslot === '18' ? '18:00' : '21:00'
 
     const systemPrompt = `
 あなたはSNSクリエイター「Sayaka Angel」です。
@@ -586,8 +589,8 @@ JSON形式で返答:
 
     const d = new Date(selectedDate)
     const slotLabel =
-      timeslot === '7only' ? '7:00' :
-      timeslot === '7and12' ? '7:00と12:00' :
+      timeslot === '7'  ? '7:00'  :
+      timeslot === '12' ? '12:00' :
       timeslot === '18' ? '18:00' : '21:00'
 
     try {
@@ -636,8 +639,8 @@ JSON形式で返答:
     const d = new Date(selectedDate)
     const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
     const slotLabel =
-      timeslot === '7only' ? '7:00' :
-      timeslot === '7and12' ? '7:00と12:00' :
+      timeslot === '7'  ? '7:00'  :
+      timeslot === '12' ? '12:00' :
       timeslot === '18' ? '18:00' : '21:00'
 
     try {
@@ -688,7 +691,7 @@ JSON形式で返答:
   }
 
   const isProductSlot = timeslot === '18' || timeslot === '21'
-  const useAnniversary = !isProductSlot && !useManualTheme
+  const useAnniversary = (timeslot === '7' || timeslot === '12') && !useManualTheme
 
   // ──────────────────────────────────────
   // JSX
@@ -739,24 +742,54 @@ JSON形式で返答:
           {/* 時間帯選択 */}
           <div className={styles.formGroup}>
             <label className={styles.label}>投稿時間帯</label>
-            <div className={styles.timeslotGrid}>
-              {TIMESLOT_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  className={`${styles.timeslotBtn} ${timeslot === opt.value ? styles.timeslotBtnActive : ''}`}
-                  onClick={() => setTimeslot(opt.value as TimeslotType)}
-                  type="button"
-                >
-                  {opt.label}
-                </button>
-              ))}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '8px' }}>
+              {TIMESLOT_OPTIONS.map(opt => {
+                const isActive = timeslot === opt.value
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => setTimeslot(opt.value as TimeslotType)}
+                    type="button"
+                    style={{
+                      padding: '12px 6px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      textAlign: 'center' as const,
+                      display: 'flex',
+                      flexDirection: 'column' as const,
+                      alignItems: 'center',
+                      gap: '4px',
+                      background: isActive ? 'rgba(180,140,255,0.28)' : 'rgba(255,255,255,0.05)',
+                      border: isActive ? '2px solid #b48cff' : '1px solid rgba(255,255,255,0.12)',
+                      color: isActive ? '#e0d0ff' : '#777',
+                      fontWeight: isActive ? 700 : 400,
+                      boxShadow: isActive ? '0 0 14px rgba(180,140,255,0.4)' : 'none',
+                    }}
+                  >
+                    <span style={{ fontSize: '0.95rem', letterSpacing: '0.03em' }}>
+                      {isActive ? '✓ ' : ''}{opt.label}
+                    </span>
+                    <span style={{ fontSize: '0.63rem', opacity: 0.72, lineHeight: 1.3 }}>
+                      {opt.note}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
 
             {/* 時間帯の説明 */}
-            <p className={styles.timeslotNote}>
+            <p style={{
+              marginTop: '10px', fontSize: '0.78rem', color: '#888',
+              lineHeight: 1.5, padding: '8px 12px',
+              background: 'rgba(255,255,255,0.03)', borderRadius: '6px',
+              borderLeft: '2px solid rgba(180,140,255,0.4)',
+            }}>
               {isProductSlot
                 ? '💼 商品紹介枠：商品名・季節感・使用シーンを優先します。記念日は使用しません。'
-                : '💫 7:00・12:00枠：「今日は何の日」をSayaka Angelらしいテーマへ変換します。'}
+                : timeslot === '7'
+                ? '💫 7:00枠：恋愛・自己肯定・やさしい関係性テーマへ変換します。'
+                : '💫 12:00枠：価値観・暮らしの気づき・仕事観テーマへ変換します。'}
             </p>
           </div>
 
@@ -792,21 +825,37 @@ JSON形式で返答:
               <>
                 <div className={styles.formGroup} style={{ marginTop: '16px' }}>
                   <label className={styles.label}>記念日一覧（使用する記念日を選択）</label>
-                  <div className={styles.anniversaryList}>
-                    {anniversaries.map(a => (
-                      <button
-                        key={a}
-                        className={`${styles.anniversaryBtn} ${selectedAnniversary === a ? styles.anniversaryBtnActive : ''}`}
-                        onClick={() => {
-                          setSelectedAnniversary(a)
-                          setConvertedThemes([])
-                          setSelectedTheme('')
-                        }}
-                        type="button"
-                      >
-                        {a}
-                      </button>
-                    ))}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                    {anniversaries.map(a => {
+                      const isActive = selectedAnniversary === a
+                      return (
+                        <button
+                          key={a}
+                          onClick={() => {
+                            setSelectedAnniversary(a)
+                            setConvertedThemes([])
+                            setSelectedTheme('')
+                          }}
+                          type="button"
+                          style={{
+                            padding: isActive ? '11px 14px 11px 12px' : '11px 16px',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            textAlign: 'left' as const,
+                            fontSize: '0.88rem',
+                            background: isActive ? 'rgba(255,200,100,0.2)' : 'rgba(255,255,255,0.04)',
+                            border: isActive ? '2px solid #ffc864' : '1px solid rgba(255,255,255,0.1)',
+                            borderLeft: isActive ? '4px solid #ffc864' : '1px solid rgba(255,255,255,0.1)',
+                            color: isActive ? '#ffe0a0' : '#999',
+                            fontWeight: isActive ? 700 : 400,
+                            boxShadow: isActive ? '0 0 10px rgba(255,200,100,0.25)' : 'none',
+                          }}
+                        >
+                          {isActive ? '▶ ' : ''}{a}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
 
@@ -831,17 +880,33 @@ JSON形式で返答:
                 {convertedThemes.length > 0 && (
                   <div className={styles.formGroup} style={{ marginTop: '16px' }}>
                     <label className={styles.label}>AI変換テーマ（使用するテーマを選択）</label>
-                    <div className={styles.themeList}>
-                      {convertedThemes.map(t => (
-                        <button
-                          key={t}
-                          className={`${styles.themeBtn} ${selectedTheme === t ? styles.themeBtnActive : ''}`}
-                          onClick={() => setSelectedTheme(t)}
-                          type="button"
-                        >
-                          {t}
-                        </button>
-                      ))}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                      {convertedThemes.map(t => {
+                        const isActive = selectedTheme === t
+                        return (
+                          <button
+                            key={t}
+                            onClick={() => setSelectedTheme(t)}
+                            type="button"
+                            style={{
+                              padding: '12px 16px',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              textAlign: 'left' as const,
+                              fontSize: '0.88rem',
+                              lineHeight: 1.6,
+                              background: isActive ? 'rgba(100,200,255,0.22)' : 'rgba(100,200,255,0.04)',
+                              border: isActive ? '2px solid #64c8ff' : '1px solid rgba(100,200,255,0.1)',
+                              color: isActive ? '#c0eaff' : '#888',
+                              fontWeight: isActive ? 700 : 400,
+                              boxShadow: isActive ? '0 0 14px rgba(100,200,255,0.3)' : 'none',
+                            }}
+                          >
+                            {isActive ? '✦ ' : ''}{t}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
