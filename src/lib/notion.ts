@@ -138,7 +138,9 @@ export async function fetchRecentPosts(limit: number = 30) {
       return {
         theme: props['投稿テーマ']?.rich_text?.[0]?.plain_text || '',
         timeSlot: props['投稿時間帯']?.select?.name || '',
+        postedAt: props['投稿日時']?.date?.start || '',
         threadsPost: props['Threads投稿文']?.rich_text?.[0]?.plain_text || '',
+        reelText: props['Instagramリール文']?.rich_text?.[0]?.plain_text || '',
         hashtags: props['ハッシュタグ']?.rich_text?.[0]?.plain_text || '',
         usedHook: props['使用済みフック']?.rich_text?.[0]?.plain_text || '',
         usedClosing: props['使用済み締め文']?.rich_text?.[0]?.plain_text || '',
