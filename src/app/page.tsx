@@ -717,6 +717,17 @@ JSON形式で返答:
     }
   }
 
+  const handleTimeslotChange = (nextTimeslot: TimeslotType) => {
+    if (nextTimeslot === timeslot) return
+
+    if (result && !notionSaved) {
+      const ok = window.confirm('Notionへの登録がされていません。変更してもよろしいですか？')
+      if (!ok) return
+    }
+
+    setTimeslot(nextTimeslot)
+  }
+
   const copyToClipboard = () => {
     if (!result) return
     navigator.clipboard.writeText(editedPost)
@@ -782,7 +793,7 @@ JSON形式で返答:
                 return (
                   <button
                     key={opt.value}
-                    onClick={() => setTimeslot(opt.value as TimeslotType)}
+                    onClick={() => handleTimeslotChange(opt.value as TimeslotType)}
                     type="button"
                     style={{
                       padding: '12px 6px',
@@ -1082,7 +1093,10 @@ JSON形式で返答:
                 className={styles.input}
                 style={{ minHeight: '220px', background: 'rgba(255,255,255,0.05)', fontSize: '0.9rem', lineHeight: '1.8', whiteSpace: 'pre-wrap' }}
                 value={editedPost}
-                onChange={e => setEditedPost(e.target.value)}
+                onChange={e => {
+                  setEditedPost(e.target.value)
+                  setNotionSaved(false)
+                }}
               />
             </div>
 
@@ -1094,7 +1108,10 @@ JSON形式で返答:
                 className={styles.input}
                 style={{ minHeight: '260px', background: 'rgba(255,255,255,0.05)', fontSize: '0.85rem', lineHeight: '1.8', whiteSpace: 'pre-wrap' }}
                 value={editedTips}
-                onChange={e => setEditedTips(e.target.value)}
+                onChange={e => {
+                  setEditedTips(e.target.value)
+                  setNotionSaved(false)
+                }}
               />
             </div>
 
