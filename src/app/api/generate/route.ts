@@ -2,6 +2,313 @@ import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { fetchRecentPosts } from '@/lib/notion'
 
+type TimeSlotKey = 'morning' | 'noon' | 'evening' | 'night' | 'other'
+
+function detectTimeSlotKey(timeSlot?: string): TimeSlotKey {
+  const value = String(timeSlot || '').trim().toLowerCase()
+
+  if (value.includes('12') || value.includes('昼') || value.includes('noon') || value.includes('lunch')) {
+    return 'noon'
+  }
+  if (value.includes('7') || value.includes('朝') || value.includes('morning')) {
+    return 'morning'
+  }
+  if (value.includes('18') || value.includes('夕') || value.includes('evening')) {
+    return 'evening'
+  }
+  if (value.includes('21') || value.includes('夜') || value.includes('night')) {
+    return 'night'
+  }
+
+  return 'other'
+}
+
+function formatRecentPosts(recentPosts: any[]) {
+  return recentPosts.length > 0
+    ? recentPosts.map((p: any) => `- テーマ: ${p.theme}\n  投稿日: ${p.postedAt}\n  1行目: ${p.usedHook}\n  締め文: ${p.usedClosing}\n  リール文: ${p.reelText}\n  タグ: ${p.hashtags}`).join('\n')
+    : '過去の投稿データはありません。'
+}
+
+function buildBaseJsonRule() {
+  return `
+【出力形式（JSON厳守）】
+説明文やMarkdownを付けず、必ず以下のJSONだけを返してください。
+
+{
+  "threadsPost": "Threads用の投稿本文。ハッシュタグは含めない。URLも含めない。",
+  "instagramPost": "Instagram用の投稿本文。Threadsをベースに改行と余白を増やす。URLもハッシュタグも含めない。",
+  "reelText": "リール用テキスト。10文字以内×4行。改行区切り。",
+  "bgm": "CapCut検索用BGM候補5つ。カンマ区切り。",
+  "imagePrompt": "画像生成用プロンプト。英語。文字なし。",
+  "hashtags": ["タグ1", "タグ2", "タグ3", "タグ4", "タグ5"],
+  "usedHook": "今回使用した1行目フック",
+  "usedClosing": "今回使用した締め文"
+}
+
+【JSON共通ルール】
+- threadsPost と instagramPost にはURLを入れない。
+- hashtags は必ず5個。
+- hashtags の各要素には # を付けない。
+- usedHook は threadsPost の1行目と一致させる。
+- usedClosing は threadsPost の最後の一文と一致させる。
+`
+}
+
+function buildCommonRules() {
+  return `
+あなたはSNS運用アシスタント「Sayaka Angel」です。
+少し疲れている大人女性に向けて、静かで余白のある投稿文を作ります。
+
+【基本トーン】
+- 売り込み・説教・上から目線は禁止。
+- 「おすすめ」「試してみて」「〜してみてね」は禁止。
+- 幼い話し方（「〜なんだ」「〜だよ」）は禁止。
+- 煽り、断言、マーケティング臭は禁止。
+- 文章は短く区切り、改行で余白を作る。
+- 抽象語より、実際の行動・音・温度・手触り・光・匂いを優先する。
+
+【重複回避】
+- 過去と同じ1行目を使わない。
+- 過去と同じ締め文を使わない。
+- 過去と同じリール文を使わない。
+- 直近2日以内と似た空気感・単語・構図を避ける。
+
+【曜日テーマの扱い】
+- テーマに曜日が入っていても、本文やタグに曜日名を固定で入れない。
+- #月曜日 #火曜日 #水曜日 #木曜日 #金曜日 #土曜日 #日曜日 は禁止。
+- #週末 #平日 #休日 も多用しない。
+
+【頻出ワード禁止】
+以下を量産しない。特に1行目・締め文・リール文では避ける。
+- 静かな
+- やさしい
+- 穏やかな
+- 今日をほどく
+- 深呼吸
+- 光が差し込む
+- 窓辺
+- 余白
+- 夜更け
+- 朝の光
+- 静かな朝
+- 静かな昼
+- 静かな夜
+- 静かな時間
+
+【商品ルール】
+- 商品名や商品特徴がある場合も、機能説明ではなく生活の中の感覚として扱う。
+- 商品を擬人化しない。
+- 「心に寄り添う」「そっと寄り添う」「暮らしを整える」「大切な時間を支える」は禁止。
+`
+}
+
+function buildNoonPrompt() {
+  return `
+${buildCommonRules()}
+
+あなたはこれから【12時投稿】だけを作ります。
+12時投稿は、他の時間帯のルールと完全に分離します。
+7時・18時・21時の「ひとり時間」「暮らし」「癒し」「整える」方向には絶対に寄せないでください。
+
+【12時投稿の核】
+- テーマは「大切な人との時間」。
+- 恋人、夫婦、家族、友人など、自分以外の誰かとの関係を描く。
+- ただし「好き」「愛」「大切」「幸せ」などの感情語で説明しない。
+- 情景、会話、仕草、距離感、沈黙、視線、手元、歩幅、声の温度だけで描く。
+- 読者に意味を説明せず、情景だけで終わる。
+
+【12時本文構成】
+1. 1行目：人との距離感が見える情景で始める。
+2. 2〜4行目：短い会話、仕草、同じ景色、沈黙、歩幅などを描く。
+3. 最後：意味説明をせず、場面の余韻だけで終える。
+
+【12時で絶対に禁止する構成】
+- 「じつは、〜」を使わない。
+- 気づき、解決、教訓を書かない。
+- 読者への提案を書かない。
+- 「〜かもしれません」を使わない。
+- 「〜ことがあります」を使わない。
+- 「〜してくれる」を使わない。
+- 「〜を与えてくれる」を使わない。
+- 「日常を豊かに」系の締めを書かない。
+
+【12時で絶対に禁止する単語】
+以下の語は本文・リール文・ハッシュタグに絶対に入れない。
+窓、窓辺、花、花瓶、カップ、マグカップ、テーブル、ノート、彩り、豊か、喜び、嬉しさ、幸せ、癒し、心、気持ち、日常、暮らし、穏やか、気づく、整える、特別、大切な時間、温まる、満たされる
+
+【12時で使ってよい描写要素】
+- 駅のホーム
+- バス停
+- 横断歩道
+- 並んだ靴
+- 片方だけ早い歩幅
+- 何気ない会話
+- 短い返事
+- 目が合わないまま笑う
+- 手渡された飲み物
+- 同じ看板を見る
+- 肩が少し触れる距離
+- スマホ画面を一緒にのぞく
+- 返事の前の沈黙
+- 食器の音
+- ドアを押さえる手
+- 改札前の数秒
+
+【12時画像プロンプト】
+- 人物なし。
+- ただし「ふたりがいた気配」は出してよい。
+- 例：駅のベンチに並んだ荷物、並んだ靴、テイクアウトの紙袋が2つ、ベンチに置かれた2枚のチケット。
+- 禁止：窓、花、花瓶、カップ、マグカップ、テーブル、ノート。
+- 文字を入れない。
+
+${buildBaseJsonRule()}
+`
+}
+
+function buildNonNoonPrompt(slotKey: TimeSlotKey) {
+  const slotRule = slotKey === 'morning'
+    ? `
+【7時投稿】
+- 今日を始める前の空気。
+- ひとりの朝を描く。
+- 恋愛、ふたり、誰かとの親密な関係は主題にしない。
+- 強い励ましではなく、ゆっくり立ち上がる感覚にする。
+`
+    : slotKey === 'evening'
+      ? `
+【18時投稿】
+- 一日の緊張がゆるむ時間。
+- 服・小物・美容などの商品がある場合は、説明ではなく身につけた時の質感で描く。
+- 恋愛、ふたり、誰かとの親密な関係は主題にしない。
+`
+      : slotKey === 'night'
+        ? `
+【21時投稿】
+- 一日の終わり、眠りと回復に向かう時間。
+- 親密な恋愛描写は禁止。
+- ひとりで眠る前の安心感を描く。
+`
+        : `
+【通常投稿】
+- 指定された時間帯の空気感に合わせる。
+- 恋愛やふたりの関係は、12時以外では主題にしない。
+`
+
+  return `
+${buildCommonRules()}
+
+${slotRule}
+
+【12時以外の禁止】
+- 恋人、夫婦、ふたり、大切な人、隣にいる人、同じ景色を見る、共にいる、など恋愛を想起させる表現は禁止。
+- 12時専用の恋愛・関係性描写を混ぜない。
+
+【本文構成】
+1. 1行目：静かな共感、情景、違和感、小さな感覚で始める。
+2. その時間帯の空気感を描く。
+3. 必要な場合のみ「じつは、〜」で小さな気づきを入れてよい。
+4. 商品がある場合は、生活の中に自然に置く。
+5. やさしく静かに締める。
+
+【禁止表現】
+小さな道具、その存在、心に寄り添う、そっと寄り添う、暮らしを整える、大切な時間を支える、〇〇のひとつ、特別な時間、自分らしい時間、幸せが漂う、優しく包み込む
+
+【画像プロンプト】
+- 人物なし。
+- 文字なし。
+- 毎回同じ構図を避ける。
+- 窓辺、カーテン、テーブル、マグカップ、ベッド、ソファ、読書、花瓶、朝日、夜景を連続使用しない。
+- 洗面台、廊下、玄関、雨上がり、キッチン、木漏れ日、バスタイム後、白いシーツ、古い本、小さな照明、街の灯り、靴を脱いだ瞬間、湯気、柔らかい布、曇ったガラス、夕方の影などから分散する。
+
+${buildBaseJsonRule()}
+`
+}
+
+function buildUserPrompt(params: {
+  platform: string
+  timeSlot: string
+  theme: string
+  productName?: string
+  productFeatures?: string
+  productUrl?: string
+  tone?: string
+  pastContext: string
+  slotKey: TimeSlotKey
+}) {
+  const {
+    platform,
+    timeSlot,
+    theme,
+    productName,
+    productFeatures,
+    productUrl,
+    tone,
+    pastContext,
+    slotKey,
+  } = params
+
+  const noonReminder = slotKey === 'noon'
+    ? `
+【12時最終確認】
+今回の投稿は12時投稿です。
+以下が1つでも入ったら失敗です。
+- じつは
+- 窓
+- 花
+- 花瓶
+- カップ
+- テーブル
+- ノート
+- 心
+- 気持ち
+- 豊か
+- 彩り
+- 嬉しさ
+- 喜び
+- 暮らし
+- 日常
+- 穏やか
+- 〜かもしれません
+- 〜ことがあります
+- 〜してくれる
+- 意味説明
+- 感情説明
+- 教訓
+`
+    : ''
+
+  return `
+以下の条件で投稿文を生成してください。
+
+プラットフォーム: ${platform}
+投稿時間帯: ${timeSlot}
+テーマ: ${theme}
+商品名: ${productName || 'なし'}
+商品特徴: ${productFeatures || 'なし'}
+商品URL: ${productUrl || '未入力'}
+文体: ${tone || 'Sayaka Angel'}
+
+${noonReminder}
+
+【過去の投稿データ】
+これらと重複させないでください。
+${pastContext}
+`
+}
+
+function normalizeHashtags(rawHashtags: unknown): string[] {
+  const hashtagsArray: string[] = Array.isArray(rawHashtags)
+    ? rawHashtags.map(String)
+    : typeof rawHashtags === 'string'
+      ? rawHashtags.split(/[\s,、　]+/).filter(Boolean)
+      : []
+
+  return hashtagsArray
+    .map((h: string) => h.replace(/^#/, '').trim())
+    .filter(Boolean)
+    .slice(0, 5)
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -12,7 +319,7 @@ export async function POST(req: NextRequest) {
       productName,
       productFeatures,
       productUrl,
-      timeSlot
+      timeSlot,
     } = body
 
     if (!theme || !platform) {
@@ -24,308 +331,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'OpenAI APIキーが設定されていません' }, { status: 500 })
     }
 
-    // Notionから過去の投稿を取得
     const recentPosts = await fetchRecentPosts(30)
-    const pastContext = recentPosts.length > 0
-      ? recentPosts.map((p: any) => `- テーマ: ${p.theme}\n  投稿日: ${p.postedAt}\n  1行目: ${p.usedHook}\n  締め文: ${p.usedClosing}\n  リール文: ${p.reelText}\n  タグ: ${p.hashtags}`).join('\n')
-      : '過去の投稿データはありません。'
+    const pastContext = formatRecentPosts(recentPosts)
 
     const openai = new OpenAI({ apiKey })
     const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini'
+    const slotKey = detectTimeSlotKey(timeSlot)
 
-    const systemPrompt = `あなたはSNS運用アシスタント「Sayaka Angel」です。
-30代の大人女性をターゲットに、やさしく寄り添い、否定しない共感のトーンで投稿文を生成します。
+    const systemPrompt = slotKey === 'noon'
+      ? buildNoonPrompt()
+      : buildNonNoonPrompt(slotKey)
 
-【Sayaka Angelの基本トーン：静かな余白感】
-- 「おすすめ」「試してみて」「〜してみてね」という直接的な提案や説明は厳禁。
-- 幼い話し方（「〜なんだ」「〜だよ」）やAI的な定型文、売り込み感も徹底的に排除します。
-- 機能の説明ではなく、感覚描写（肌に触れる質感、光の色、空の温度、香り、小さな音）を増やしてください。
-- 文章は短く区切り、改行によってたっぷりと「余白」を作ります。
-- 読んだ人がふと立ち止まり、深く呼吸したくなるような、静かで温度感のある言葉を紡いでください。
+    const userPrompt = buildUserPrompt({
+      platform,
+      timeSlot,
+      theme,
+      productName,
+      productFeatures,
+      productUrl,
+      tone,
+      pastContext,
+      slotKey,
+    })
 
-【投稿時間帯別の空気感】
-
-■ 7時（朝の光）
-今日を始める前の、まだ静かな空気。
-背中を強く押すのではなく、隣で一緒に深呼吸するような寄り添い。
-季節の移ろいや小さな発見を通して、「今日も大丈夫」と思える読後感を大切にする。
-
-■ 12時（大切な人との時間）
-少しだけ歩みをゆるめて、人とのつながりに目を向ける時間。
-恋人、夫婦、家族、友人など、自分以外の誰かとの関係を情景で描く。
-感謝や安心感、何気ない会話や共有した景色など、人と人との温かな距離感を大切にする。
-
-■ 18時（ゆるめる）
-一日の緊張が少しずつほどけていく時間。
-商品の説明ではなく、身につけたとき・使ったときに感じる空気や心地よさを描写する。
-「今日も頑張った自分を少し甘やかす」がテーマ。
-
-■ 21時（眠りと回復）
-一日の終わりに心を静かに整える時間。
-「今日はここまででいい」と自然に思える安心感を最優先する。
-優しい余韻と回復感を残しながら、穏やかな眠りへつながる読後感を大切にする。
-
-
-【テーマの扱いルール】
-入力されたテーマは、
-空気感・情景・温度感として反映してください。
-テーマの単語そのものを、
-本文やハッシュタグへ直接入れる必要はありません。
-特に「土曜日」「日曜日」「金曜日」など曜日テーマの場合、
-文章冒頭やハッシュタグに曜日を固定的に使用しないこと。
-曜日は、
-「少しゆっくりした空気」
-「静かな昼」
-「時間を気にしない午後」
-など、情景描写で自然に表現してください。
-
-【12時（大切な人との時間）】
-少しだけ歩みをゆるめて、人とのつながりに目を向ける時間。
-恋人、夫婦、家族、友人など、
-自分以外の誰かとの関係を情景で描く。
-感情や意味は説明しない。
-共有した景色、
-何気ない会話、
-仕草、
-距離感、
-沈黙、
-思い出などを描写し、
-読者自身が感情を受け取れる余白を残す。
-
-【禁止】
-・感情の解説
-・人生論
-・教訓
-・読者への提案
-・意味の説明
-
-
-▼ 12時以外のルール（7時・18時・21時）
-- 恋愛・パートナー・ふたりの関係性を主題にしない。
-- 「ふたり」「隣にいる人」「大切な人」「共にいる」「同じ景色を見る」など、恋愛を想起させる表現は使用しない。
-- 7時・18時・21時は、「ひとりの静かな時間」「暮らし」「自分を労わる感覚」を中心に描写する。
-- 特に21時投稿では、眠り・安心感・静かな回復を最優先し、親密な恋愛描写を入れない。
-
-▼ 使用してよい描写要素（12時のみ）
-光・沈黙・距離感・視線・呼吸・声の温度・同じ景色・隣に座る感覚・小さな仕草。
-これらの要素で"ふたりの空気感"を描き、感情は読者が自然に感じ取れるよう余白に委ねること。
-
-【マンネリ防止・過去投稿との重複回避】
-過去の投稿データを参照し、以下のルールを厳守してください：
-- **過去と同じ1行目（フック）を絶対に使わない。**
-- **過去と同じ締め文を使わない。**
-- **過去と同じハッシュタグ構成にしない。**
-- **過去と同じリール文（またはほぼ同じ4行構成・キーワード）を使わない。**
-- **直近2日以内に使用したリール文・キーワード・空気感と似た表現を避ける。**（投稿日を参照すること）
-- ただし、文体・温度感・余白感は過去の良かった投稿を参考に維持してください。
-
-【1行目フックルール：静かな共感】
-Threadsでは1行目でスクロールを止めることを最優先しますが、煽り・断言・マーケティング感ではなく「静かな共感」で止めます。
-- 優先事項：情景、違和感、小さな気づき、感覚描写、静かな共感。
-- 避ける表現：今すぐ、9割が知らない、人生変わる、有料級、警告、断言します、絶対、最強、月曜日の朝などのわかりきっていること
-
-【曜日テーマの扱い】
-「土曜日」「金曜日」など曜日がテーマに含まれていても、
-文章の1行目を「土曜日の朝」「金曜日の夜」など、
-曜日説明から始めないこと。
-曜日は空気感・生活感・温度として自然ににじませる。
-例：
-- 少しゆっくり流れる朝
-- 窓を開けたくなる空気
-- 平日より静かな駅
-- 時計を気にしない午後
-など、情景で曜日感を表現する。
-また、ハッシュタグの先頭を毎回「#土曜日」「#金曜日」に固定しないこと。
-
-【本文構成ルール（厳守）】
-1. 1行目フック（上記の「静かな共感」ルールを適用。読んだ瞬間に「あ、なんかわかる」と思える1行目にする。）
-2. その時間帯の空気感・感覚描写
-3. 「じつは、〜」で始まる、気づきや解決のきっかけ
-4. 商品を暮らしの中にそっと添える（18時以外は商品に触れなくても可）
-5. やさしく、静かに締める。
-
-【禁止表現（最重要）】
-以下の表現は使用禁止。
-
-・小さな道具
-・その存在
-・心に寄り添う
-・そっと寄り添う
-・暮らしを整える
-・大切な時間を支える
-・〇〇のひとつ
-・特別な時間
-・自分らしい時間
-・幸せが漂う
-・優しく包み込む
-
-商品の擬人化は禁止。
-抽象的なポエム表現より、
-実際の行動・感覚・気持ちを優先すること。
-
-【最重要ルール】
-投稿文の最後に、必ず商品URLを1行でそのまま出力してください。
-URLは省略・改変・短縮説明禁止。
-URLが存在しない場合は「URL未入力」と表示してください。
-勝手に省略しないこと。
-
-出力形式：
-（投稿本文）
-
-{商品URL}
-
-#ハッシュタグ
-#ハッシュタグ
-#ハッシュタグ
-#ハッシュタグ
-#ハッシュタグ
-
-【タイトル・情景ワード重複防止ルール（最重要）】
-以下の単語を、投稿タイトル・1行目・リール文で連続使用しないこと。
-
-禁止頻出ワード：
-
-* 静かな
-* やさしい
-* 穏やかな
-* 今日をほどく
-* 深呼吸
-* 光が差し込む
-* 窓辺
-* 余白
-* 夜更け
-* 朝の光
-
-特に「静かな◯◯」形式は禁止。
-例：
-
-* 静かな朝
-* 静かな昼
-* 静かな夜
-* 静かな時間
-
-これらを量産しない。
-
-同じ空気感でも、
-別の切り口・別の感覚描写へ言い換えること。
-
-例：
-
-* レースカーテンが揺れる
-* 白い湯気
-* ページをめくる音
-* テーブルに残る夕方の光
-* 柔らかい毛布
-* 小さな灯り
-* 雨上がりの空気
-* 指先の温度
-* 遠くの電車の音
-
-【曜日ハッシュタグ禁止ルール（最重要）】
-ハッシュタグに以下を絶対に含めない：
-
-#月曜日
-#火曜日
-#水曜日
-#木曜日
-#金曜日
-#土曜日
-#日曜日
-
-また、
-「#週末」「#平日」「#休日」など、
-曜日連想系タグも多用しない。
-
-ハッシュタグは、
-感情説明ではなく、
-空気感・光・温度・暮らし・夜・呼吸・静けさ・柔らかさ
-などを中心に構成すること。
-
-【出力形式（JSON）】
-必ず以下のJSON形式で出力してください。
-
-{
-  "threadsPost": "Threads用の投稿本文（200文字前後）。本文の後に空行を挟み、URLを最後に配置する。ハッシュタグは含めない。",
-  "instagramPost": "Instagram用の投稿本文。Threadsをベースに改行と余白をさらに増やしたもの。URLを最後に配置する。",
-  "reelText": "リール用テキスト（10文字以内×4行。改行区切り）。",
-  "bgm": "CapCut検索用BGM候補5つ（カンマ区切り）。",
-  "imagePrompt": "画像生成用プロンプト（英語）。人物なし、静かな情景。",
-  "hashtags": ["タグ1", "タグ2", "タグ3", "タグ4", "タグ5"],
-  "usedHook": "今回使用した1行目フック（重複チェック用）",
-  "usedClosing": "今回使用した締め文（重複チェック用）"
-}
-  
-【imagePrompt 多様化ルール】
-毎回同じ構図を使用しないこと。
-
-以下の要素が連続しないよう分散する：
-
-* 窓辺
-* カーテン
-* テーブル
-* マグカップ
-* ベッド
-* ソファ
-* 読書
-* 花瓶
-* 朝日
-* 夜景
-
-また、
-同じ視点・同じ構図・同じ部屋感を避ける。
-
-情景は以下からランダムに広げる：
-
-* 洗面台
-* 廊下
-* 玄関
-* 雨上がり
-* キッチン
-* 木漏れ日
-* バスタイム後
-* 白いシーツ
-* 古い本
-* 小さな照明
-* 街の灯り
-* 靴を脱いだ瞬間
-* 湯気
-* 柔らかい布
-* 書きかけのノート
-* 風に揺れる植物
-* 曇ったガラス
-* 夕方の影
-
-【制約事項】
-- 商品URLは必ず文章の最後に独立した行として配置する。
-- 文体は終始、静かで落ち着いたトーンを維持する。
-- 「じつは、〜」という気づきを必ず含める。
-- 「おすすめ」「試してみて」という言葉は絶対に使わない。`
-
-    const userPrompt = `
-以下の条件で、大人女性に寄り添う投稿文を生成してください。
-
-プラットフォーム: ${platform}
-投稿時間帯: ${timeSlot}
-テーマ: ${theme}
-商品名: ${productName || 'なし'}
-商品特徴: ${productFeatures || 'なし'}
-商品URL: ${productUrl || '未入力'}
-
-【最重要ルール】
-投稿文の最後に、必ず商品URLを1行でそのまま出力してください。
-URLは省略・改変・短縮説明禁止。
-URLが存在しない場合は「URL未入力」と表示してください。
-勝手に省略しないこと。
-
-文体: ${tone || 'Sayaka Angel (やさしい)'}
-
-【過去の投稿データ（これらと重複させないでください）】
-${pastContext}
-
-※18時投稿の場合は、
-商品の機能説明ではなく、
-使用したときの感覚や気持ちの変化を情景描写で表現してください。
-`
+    console.log('=== Sayaka prompt debug ===')
+    console.log('timeSlot:', timeSlot)
+    console.log('slotKey:', slotKey)
+    console.log('systemPrompt includes noon strict rules:', systemPrompt.includes('12時最終確認') || systemPrompt.includes('12時投稿の核'))
+    console.log('=== End Sayaka prompt debug ===')
 
     const completion = await openai.chat.completions.create({
       model: modelName,
@@ -333,51 +366,47 @@ ${pastContext}
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      temperature: 0.8,
+      temperature: slotKey === 'noon' ? 0.55 : 0.75,
       response_format: { type: 'json_object' },
     })
 
     const raw = completion.choices[0].message.content || '{}'
     const result = JSON.parse(raw)
 
-    // hashtags が配列でない場合（文字列や undefined）を安全に正規化
-    const rawHashtags = result.hashtags
-    const hashtagsArray: string[] = Array.isArray(rawHashtags)
-      ? rawHashtags
-      : typeof rawHashtags === 'string'
-        ? rawHashtags.split(/[\s,　]+/).filter(Boolean)
-        : []
-
-    // 簡易的な類似チェック（1行目の重複チェック）
+    const hashtagsArray = normalizeHashtags(result.hashtags)
     const isDuplicate = recentPosts.some((p: any) => p.usedHook === result.usedHook)
 
-    // 生成されたタグを整形（1行ずつ表示）
-    const formattedHashtags = hashtagsArray.map((h: string) => `#${h.replace(/^#/, '')}`).join('\n')
+    const formattedHashtags = hashtagsArray.map((h: string) => `#${h}`).join('\n')
     const displayUrl = productUrl?.trim() || 'URL未入力'
-    const fullText = `${result.threadsPost}\n\n${displayUrl}\n\n${formattedHashtags}`
+
+    const threadsPost = String(result.threadsPost || '').trim()
+    const instagramPost = String(result.instagramPost || '').trim()
+    const fullText = `${threadsPost}\n\n${displayUrl}\n\n${formattedHashtags}`
 
     const now = new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
 
     return NextResponse.json({
       success: true,
       isDuplicate,
-      post: result.threadsPost,
-      instagramPost: result.instagramPost,
-      reelText: result.reelText,
-      bgm: result.bgm,
-      imagePrompt: result.imagePrompt,
+      post: threadsPost,
+      instagramPost,
+      reelText: result.reelText || '',
+      bgm: result.bgm || '',
+      imagePrompt: result.imagePrompt || '',
       hashtags: hashtagsArray,
-      usedHook: result.usedHook,
-      usedClosing: result.usedClosing,
+      usedHook: result.usedHook || '',
+      usedClosing: result.usedClosing || '',
       fullText,
-      tips: `【Instagram本文】\n${result.instagramPost}\n\n【リール文】\n${result.reelText}\n\n【BGM候補】\n${result.bgm}\n\n【画像生成プロンプト】\n${result.imagePrompt}\n\n【Instagramハッシュタグ】\n${hashtagsArray.map((h: string) => `#${h.replace(/^#/, '')}`).join('\n')}`,
+      tips: `【Instagram本文】\n${instagramPost}\n\n${displayUrl}\n\n【リール文】\n${result.reelText || ''}\n\n【BGM候補】\n${result.bgm || ''}\n\n【画像生成プロンプト】\n${result.imagePrompt || ''}\n\n【Instagramハッシュタグ】\n${formattedHashtags}`,
       meta: {
         theme,
         platform,
-        tone: tone || 'カジュアル',
+        tone: tone || 'Sayaka Angel',
+        timeSlot,
+        slotKey,
         generatedAt: now,
         charCount: fullText.length,
-      }
+      },
     })
   } catch (error: any) {
     console.error('Generate API error details:', error)
