@@ -2,8 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { fetchRecentPosts } from '@/lib/notion'
 
+/* =========================================================
+ * 型定義
+ * =======================================================*/
 type TimeSlotKey = 'morning' | 'noon' | 'evening' | 'night' | 'other'
 
+/* =========================================================
+ * 時間帯判定
+ * =======================================================*/
 function detectTimeSlotKey(timeSlot?: string): TimeSlotKey {
   const value = String(timeSlot || '').trim().toLowerCase()
 
@@ -23,12 +29,86 @@ function detectTimeSlotKey(timeSlot?: string): TimeSlotKey {
   return 'other'
 }
 
+/* =========================================================
+ * 12時の禁止トークン（ハード）
+ *  - 出力後に機械検査する。誤検知を避けるため
+ *    多くは2文字以上のフレーズに限定し、単漢字(心/花/窓)は
+ *    ソフト扱いとしてプロンプト側に任せる。
+ * =======================================================*/
+const NOON_HARD_BANNED: string[] = [
+  'じつは',
+  '気づき',
+  '気づい',
+  '気づく',
+  '教訓',
+  '学び',
+  '癒し',
+  '豊か',
+  '彩り',
+  '嬉しさ',
+  '喜び',
+  '幸せ',
+  '大切な時間',
+  '日常を彩',
+  '日常を豊か',
+  'かもしれません',
+  'ことがあります',
+  'してくれる',
+  '与えてくれる',
+]
+
+/* =========================================================
+ * 12時の情景モチーフ（プール）
+ *  - 毎リクエストでシャッフルして部分集合だけ提示し、
+ *    先頭固定アンカー（靴・洗濯物）への偏りを防ぐ。
+ *  - 恒久的なモチーフ重複回避には Notion 側に sceneMotif 列を
+ *    追加し、過去分を avoid リストへ渡すのが理想（後述）。
+ * =======================================================*/
+const NOON_MOTIF_POOL: string[] = [
+  '玄関にそろえられた大小の靴',
+  '半分だけ残された昼食',
+  '廊下に置かれたままの荷物',
+  '物干しに並んだ大小の洗濯物',
+  '食べかけのまま伏せられた箸',
+  '冷蔵庫に貼られた短いメモ',
+  '階段の途中に置かれた本',
+  '半分開いたふすまから差す影',
+  '畳に並んだ二つの座布団',
+  '留守番電話の短い伝言',
+  '読みかけのまま置かれた新聞',
+  '片づけ途中の食器の音',
+  '畳まれずに重ねられた上着',
+  '時計の秒針だけが響く室内',
+  '誰かが入れたばかりの番茶の湯気',
+  '帰り際に脱いだままの上着の形',
+]
+
+function pickNoonMotifs(count: number): string[] {
+  const pool = [...NOON_MOTIF_POOL]
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[pool[i], pool[j]] = [pool[j], pool[i]]
+  }
+  return pool.slice(0, Math.min(count, pool.length))
+}
+
+/* =========================================================
+ * 過去投稿の整形（重複回避用）
+ * =======================================================*/
 function formatRecentPosts(recentPosts: any[]) {
   return recentPosts.length > 0
-    ? recentPosts.map((p: any) => `- テーマ: ${p.theme}\n  投稿日: ${p.postedAt}\n  1行目: ${p.usedHook}\n  締め文: ${p.usedClosing}\n  リール文: ${p.reelText}\n  タグ: ${p.hashtags}`).join('\n')
+    ? recentPosts
+        .map(
+          (p: any) =>
+            `- テーマ: ${p.theme}\n  投稿日: ${p.postedAt}\n  1行目: ${p.usedHook}\n  締め文: ${p.usedClosing}\n  リール文: ${p.reelText}\n  タグ: ${p.hashtags}`
+        )
+        .join('\n')
     : '過去の投稿データはありません。'
 }
 
+/* =========================================================
+ * JSON出力ルール（全時間帯共通・出力形式は従来どおり維持）
+ * =======================================================*/
 function buildBaseJsonRule() {
   return `
 【出力形式（JSON厳守）】
@@ -49,15 +129,20 @@ function buildBaseJsonRule() {
 - threadsPost と instagramPost にはURLを入れない。
 - hashtags は必ず5個。
 - hashtags の各要素には # を付けない。
-- usedHook は threadsPost の1行目と一致させる。
-- usedClosing は threadsPost の最後の一文と一致させる。
+- usedHook は threadsPost の1行目と一字一句一致させる。
+- usedClosing は threadsPost の最後の一文と一字一句一致させる。
 `
 }
 
+/* =========================================================
+ * 共通ルール（全時間帯共通）
+ *  - 本文構成「じつは／気づき」はここに含めない（時間帯側へ分離）。
+ *  - 頻出ワードのソフト禁止は全時間帯で有効（前版で欠落していた分を復活）。
+ * =======================================================*/
 function buildCommonRules() {
   return `
 あなたはSNS運用アシスタント「Sayaka Angel」です。
-少し疲れている大人女性に向けて、静かで余白のある投稿文を作ります。
+少し疲れている大人女性に向けて、余白のある投稿文を作ります。
 
 【基本トーン】
 - 売り込み・説教・上から目線は禁止。
@@ -66,6 +151,11 @@ function buildCommonRules() {
 - 煽り、断言、マーケティング臭は禁止。
 - 文章は短く区切り、改行で余白を作る。
 - 抽象語より、実際の行動・音・温度・手触り・光・匂いを優先する。
+
+【頻出ワードのソフト禁止（多用しない）】
+次の語を毎回のように使わない。特に1行目・締め文・リール文では避ける。
+静かな / やさしい / 穏やかな / 今日をほどく / 深呼吸 / 光が差し込む / 余白 /
+夜更け / 朝の光 / 静かな朝 / 静かな昼 / 静かな夜 / 静かな時間
 
 【重複回避】
 - 過去と同じ1行目を使わない。
@@ -78,152 +168,198 @@ function buildCommonRules() {
 - #月曜日 #火曜日 #水曜日 #木曜日 #金曜日 #土曜日 #日曜日 は禁止。
 - #週末 #平日 #休日 も多用しない。
 
-【頻出ワード禁止】
-以下を量産しない。特に1行目・締め文・リール文では避ける。
-- 静かな
-- やさしい
-- 穏やかな
-- 今日をほどく
-- 深呼吸
-- 光が差し込む
-- 窓辺
-- 余白
-- 夜更け
-- 朝の光
-- 静かな朝
-- 静かな昼
-- 静かな夜
-- 静かな時間
-
-【商品ルール】
+【商品ルール（全時間帯共通）】
 - 商品名や商品特徴がある場合も、機能説明ではなく生活の中の感覚として扱う。
 - 商品を擬人化しない。
 - 「心に寄り添う」「そっと寄り添う」「暮らしを整える」「大切な時間を支える」は禁止。
 `
 }
 
-function buildNoonPrompt() {
-  return `
-${buildCommonRules()}
+/* =========================================================
+ * 12時専用ルール（完全分離・独立プロンプト）
+ *  - 感情ではなく情景だけ。解釈は読者に委ねる。
+ *  - 文体の参照を「短い散文」に固定し、恋愛文体を誘発しない。
+ *  - モチーフは毎回ローテーションしたサブセットだけ提示。
+ * =======================================================*/
+function buildNoonRules(motifs: string[]) {
+  const motifLines = motifs.map((m) => `- ${m}`).join('\n')
 
+  return `
 あなたはこれから【12時投稿】だけを作ります。
-12時投稿は、他の時間帯のルールと完全に分離します。
-7時・18時・21時の「ひとり時間」「暮らし」「癒し」「整える」方向には絶対に寄せないでください。
+12時投稿は他の時間帯と完全に分離します。
+7時・18時・21時の「ひとり時間」「癒し」「整える」「気づき」方向には絶対に寄せないでください。
+
+【12時投稿の目的】
+- 感情を書くことではない。情景だけを書く。
+- 読者に解釈を完全に委ねる。
+- 短い散文のひとコマのように、説明せず途中で静かに終える。
+- オチを書かない。気づき・教訓・まとめを書かない。
+- 恋愛として書かない（恋人を匂わせない。ロマンス文体にしない）。
 
 【12時投稿の核】
-- テーマは「大切な人との時間」。
-- 恋人、夫婦、家族、友人など、自分以外の誰かとの関係を描く。
-- ただし「好き」「愛」「大切」「幸せ」などの感情語で説明しない。
-- 情景、会話、仕草、距離感、沈黙、視線、手元、歩幅、声の温度だけで描く。
-- 読者に意味を説明せず、情景だけで終わる。
+- 「誰かと過ごす昼の時間」をテーマにする。
+- 相手は特定しない（家族・友人・同居人などを想定し、恋愛に限定しない）。
+- 自分以外の誰かの気配を、情景・物・音・距離・間（ま）だけで示す。
+- 関係性に名前を付けない（恋人・夫婦・家族などと書かない）。
+- 「好き」「愛」「大切」「幸せ」などの感情語で説明しない。
 
 【12時本文構成】
-1. 1行目：人との距離感が見える情景で始める。
-2. 2〜4行目：短い会話、仕草、同じ景色、沈黙、歩幅などを描く。
-3. 最後：意味説明をせず、場面の余韻だけで終える。
+1. 1行目：誰かの気配を感じる情景で始める。
+2. 2〜4行目：物の配置・短い動作・音・距離・間だけを描く。
+3. 最後：意味を説明せず、情景の途中で静かに終える。
 
-【12時で絶対に禁止する構成】
+【12時で絶対に禁止する構成（ハード）】
 - 「じつは、〜」を使わない。
-- 気づき、解決、教訓を書かない。
-- 読者への提案を書かない。
-- 「〜かもしれません」を使わない。
-- 「〜ことがあります」を使わない。
-- 「〜してくれる」を使わない。
-- 「〜を与えてくれる」を使わない。
-- 「日常を豊かに」系の締めを書かない。
+- 気づき・学び・教訓・解決・まとめを書かない。
+- 読者への提案・問いかけを書かない。
+- 感情説明・意味説明をしない。
+- 「〜かもしれません」「〜ことがあります」「〜してくれる」「〜を与えてくれる」を使わない。
+- 「日常を彩る」「日常を豊かに」系の締めを書かない。
 
-【12時で絶対に禁止する単語】
-以下の語は本文・リール文・ハッシュタグに絶対に入れない。
-窓、窓辺、花、花瓶、カップ、マグカップ、テーブル、ノート、彩り、豊か、喜び、嬉しさ、幸せ、癒し、心、気持ち、日常、暮らし、穏やか、気づく、整える、特別、大切な時間、温まる、満たされる
+【12時で絶対に禁止する単語（ハード）】
+じつは、気づき、学び、教訓、意味説明、喜び、嬉しさ、幸せ、豊か、彩り、癒し、特別、大切な時間
 
-【12時で使ってよい描写要素】
-- 駅のホーム
-- バス停
-- 横断歩道
-- 並んだ靴
-- 片方だけ早い歩幅
-- 何気ない会話
-- 短い返事
-- 目が合わないまま笑う
-- 手渡された飲み物
-- 同じ看板を見る
-- 肩が少し触れる距離
-- スマホ画面を一緒にのぞく
-- 返事の前の沈黙
-- 食器の音
-- ドアを押さえる手
-- 改札前の数秒
+【12時でなるべく避ける単語（ソフト・どうしても自然なときのみ可）】
+心、気持ち、日常、暮らし、穏やか、整える、窓、窓辺、花、花瓶、カップ、マグカップ、テーブル、ノート
+※これらに頼らず、食卓・廊下・玄関・台所など別の語で情景を立てること。
+
+【12時で避ける恋愛テンプレ（陳腐化するため使わない）】
+駅のホーム、バス停、横断歩道、肩が触れる、手をつなぐ、夕日を見る、同じ景色を見る、カフェデート、見つめ合う、寄り添う
+
+【12時で使ってよい情景要素（今回の候補。毎回この中から選び、過去と変える）】
+${motifLines}
 
 【12時画像プロンプト】
-- 人物なし。
-- ただし「ふたりがいた気配」は出してよい。
-- 例：駅のベンチに並んだ荷物、並んだ靴、テイクアウトの紙袋が2つ、ベンチに置かれた2枚のチケット。
-- 禁止：窓、花、花瓶、カップ、マグカップ、テーブル、ノート。
-- 文字を入れない。
-
-${buildBaseJsonRule()}
+- 人物なし。ただし「誰かがいた気配」は出してよい。
+- 例：玄関にそろえられた大小の靴／畳に並んだ二つの座布団／物干しに並んだ大小の洗濯物／廊下に伸びる午後の光と置かれた荷物。
+- 禁止構図：花瓶、窓辺、マグカップ、テーブル、駅ホーム。
+- 文字を入れない。英語で書く。
 `
 }
 
-function buildNonNoonPrompt(slotKey: TimeSlotKey) {
-  const slotRule = slotKey === 'morning'
-    ? `
+/* =========================================================
+ * 7時専用ルール
+ * =======================================================*/
+function buildMorningRules() {
+  return `
 【7時投稿】
 - 今日を始める前の空気。
 - ひとりの朝を描く。
 - 恋愛、ふたり、誰かとの親密な関係は主題にしない。
 - 強い励ましではなく、ゆっくり立ち上がる感覚にする。
 `
-    : slotKey === 'evening'
-      ? `
+}
+
+/* =========================================================
+ * 18時専用ルール
+ * =======================================================*/
+function buildEveningRules() {
+  return `
 【18時投稿】
 - 一日の緊張がゆるむ時間。
 - 服・小物・美容などの商品がある場合は、説明ではなく身につけた時の質感で描く。
 - 恋愛、ふたり、誰かとの親密な関係は主題にしない。
 `
-      : slotKey === 'night'
-        ? `
+}
+
+/* =========================================================
+ * 21時専用ルール
+ * =======================================================*/
+function buildNightRules() {
+  return `
 【21時投稿】
 - 一日の終わり、眠りと回復に向かう時間。
 - 親密な恋愛描写は禁止。
 - ひとりで眠る前の安心感を描く。
 `
-        : `
+}
+
+/* =========================================================
+ * その他の時間帯（フォールバック）
+ * =======================================================*/
+function buildOtherRules() {
+  return `
 【通常投稿】
 - 指定された時間帯の空気感に合わせる。
 - 恋愛やふたりの関係は、12時以外では主題にしない。
 `
+}
 
+/* =========================================================
+ * 非12時の関係性禁止ルール
+ * =======================================================*/
+function buildNonNoonRelationBan() {
   return `
-${buildCommonRules()}
-
-${slotRule}
-
-【12時以外の禁止】
+【12時以外の関係性禁止】
 - 恋人、夫婦、ふたり、大切な人、隣にいる人、同じ景色を見る、共にいる、など恋愛を想起させる表現は禁止。
-- 12時専用の恋愛・関係性描写を混ぜない。
+- 12時専用の関係性描写を混ぜない。
+`
+}
 
-【本文構成】
+/* =========================================================
+ * 非12時の本文構成（気づき=「じつは」はここだけで許可・任意）
+ *  - 7時・18時・21時のみ適用。12時には絶対に渡さない。
+ * =======================================================*/
+function buildReflectiveStructure() {
+  return `
+【本文構成（7時・18時・21時のみ）】
 1. 1行目：静かな共感、情景、違和感、小さな感覚で始める。
 2. その時間帯の空気感を描く。
-3. 必要な場合のみ「じつは、〜」で小さな気づきを入れてよい。
+3. 必要なときだけ「じつは、〜」で小さな気づきを入れてよい（任意。不要なら入れない）。
 4. 商品がある場合は、生活の中に自然に置く。
 5. やさしく静かに締める。
 
 【禁止表現】
 小さな道具、その存在、心に寄り添う、そっと寄り添う、暮らしを整える、大切な時間を支える、〇〇のひとつ、特別な時間、自分らしい時間、幸せが漂う、優しく包み込む
+`
+}
 
+/* =========================================================
+ * 非12時の画像プロンプトルール
+ * =======================================================*/
+function buildNonNoonImageRule() {
+  return `
 【画像プロンプト】
 - 人物なし。
 - 文字なし。
 - 毎回同じ構図を避ける。
 - 窓辺、カーテン、テーブル、マグカップ、ベッド、ソファ、読書、花瓶、朝日、夜景を連続使用しない。
 - 洗面台、廊下、玄関、雨上がり、キッチン、木漏れ日、バスタイム後、白いシーツ、古い本、小さな照明、街の灯り、靴を脱いだ瞬間、湯気、柔らかい布、曇ったガラス、夕方の影などから分散する。
-
-${buildBaseJsonRule()}
 `
 }
 
+/* =========================================================
+ * systemPrompt 組み立て
+ *  - noon : 共通 + 12時専用(モチーフ注入) + JSON（気づき構造は含めない）
+ *  - それ以外 : 共通 + 時間帯 + 関係性禁止 + 本文構成 + 画像 + JSON
+ * =======================================================*/
+function buildSystemPrompt(slotKey: TimeSlotKey, noonMotifs: string[]): string {
+  if (slotKey === 'noon') {
+    return [buildCommonRules(), buildNoonRules(noonMotifs), buildBaseJsonRule()].join('\n')
+  }
+
+  const slotRules =
+    slotKey === 'morning'
+      ? buildMorningRules()
+      : slotKey === 'evening'
+        ? buildEveningRules()
+        : slotKey === 'night'
+          ? buildNightRules()
+          : buildOtherRules()
+
+  return [
+    buildCommonRules(),
+    slotRules,
+    buildNonNoonRelationBan(),
+    buildReflectiveStructure(),
+    buildNonNoonImageRule(),
+    buildBaseJsonRule(),
+  ].join('\n')
+}
+
+/* =========================================================
+ * userPrompt 組み立て
+ * =======================================================*/
 function buildUserPrompt(params: {
   platform: string
   timeSlot: string
@@ -247,35 +383,20 @@ function buildUserPrompt(params: {
     slotKey,
   } = params
 
-  const noonReminder = slotKey === 'noon'
-    ? `
+  const hasProduct = Boolean((productName && productName.trim()) || (productFeatures && productFeatures.trim()))
+
+  const noonReminder =
+    slotKey === 'noon'
+      ? `
 【12時最終確認】
-今回の投稿は12時投稿です。
-以下が1つでも入ったら失敗です。
-- じつは
-- 窓
-- 花
-- 花瓶
-- カップ
-- テーブル
-- ノート
-- 心
-- 気持ち
-- 豊か
-- 彩り
-- 嬉しさ
-- 喜び
-- 暮らし
-- 日常
-- 穏やか
-- 〜かもしれません
-- 〜ことがあります
-- 〜してくれる
-- 意味説明
-- 感情説明
-- 教訓
-`
-    : ''
+今回の投稿は12時投稿です。以下が1つでも入ったら失敗です。
+- じつは / 気づき / 学び / 教訓 / 意味説明 / 感情説明 / オチ / まとめ
+- 喜び / 嬉しさ / 幸せ / 豊か / 彩り / 癒し / 特別 / 大切な時間 / 日常を彩る
+- 駅のホーム / 肩が触れる / 手をつなぐ / 夕日を見る / 同じ景色を見る / カフェデート
+- 〜かもしれません / 〜ことがあります / 〜してくれる
+情景だけを書き、説明せず途中で終えること。恋人を匂わせないこと。
+${hasProduct ? '- 商品は、機能を語らず情景の中の「物」として一度だけ置く。商品名は本文に直接書かない。\n' : ''}`
+      : ''
 
   return `
 以下の条件で投稿文を生成してください。
@@ -296,19 +417,66 @@ ${pastContext}
 `
 }
 
-function normalizeHashtags(rawHashtags: unknown): string[] {
+/* =========================================================
+ * ハッシュタグ正規化（+ 12時は禁止語タグを除去）
+ * =======================================================*/
+function normalizeHashtags(rawHashtags: unknown, slotKey: TimeSlotKey): string[] {
   const hashtagsArray: string[] = Array.isArray(rawHashtags)
     ? rawHashtags.map(String)
     : typeof rawHashtags === 'string'
       ? rawHashtags.split(/[\s,、　]+/).filter(Boolean)
       : []
 
-  return hashtagsArray
+  const cleaned = hashtagsArray
     .map((h: string) => h.replace(/^#/, '').trim())
     .filter(Boolean)
-    .slice(0, 5)
+
+  const filtered =
+    slotKey === 'noon'
+      ? cleaned.filter((h) => !NOON_HARD_BANNED.some((b) => h.includes(b)))
+      : cleaned
+
+  return filtered.slice(0, 5)
 }
 
+/* =========================================================
+ * 12時出力のハード禁止語検査
+ * =======================================================*/
+function findNoonViolations(text: string): string[] {
+  const hits = new Set<string>()
+  for (const word of NOON_HARD_BANNED) {
+    if (text.includes(word)) hits.add(word)
+  }
+  return Array.from(hits)
+}
+
+/* =========================================================
+ * OpenAI 呼び出しヘルパー
+ * =======================================================*/
+async function runCompletion(
+  openai: OpenAI,
+  modelName: string,
+  systemPrompt: string,
+  userPrompt: string,
+  temperature: number
+): Promise<any> {
+  const completion = await openai.chat.completions.create({
+    model: modelName,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    temperature,
+    response_format: { type: 'json_object' },
+  })
+
+  const raw = completion.choices[0].message.content || '{}'
+  return JSON.parse(raw)
+}
+
+/* =========================================================
+ * POST ハンドラ（APIレスポンス形式は従来どおり維持。meta は追記のみ）
+ * =======================================================*/
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -338,10 +506,8 @@ export async function POST(req: NextRequest) {
     const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini'
     const slotKey = detectTimeSlotKey(timeSlot)
 
-    const systemPrompt = slotKey === 'noon'
-      ? buildNoonPrompt()
-      : buildNonNoonPrompt(slotKey)
-
+    const noonMotifs = slotKey === 'noon' ? pickNoonMotifs(6) : []
+    const systemPrompt = buildSystemPrompt(slotKey, noonMotifs)
     const userPrompt = buildUserPrompt({
       platform,
       timeSlot,
@@ -357,23 +523,35 @@ export async function POST(req: NextRequest) {
     console.log('=== Sayaka prompt debug ===')
     console.log('timeSlot:', timeSlot)
     console.log('slotKey:', slotKey)
-    console.log('systemPrompt includes noon strict rules:', systemPrompt.includes('12時最終確認') || systemPrompt.includes('12時投稿の核'))
+    console.log('isNoonPrompt:', slotKey === 'noon')
+    console.log('noonMotifs:', noonMotifs)
+    console.log('systemPrompt includes noon-only rules:', systemPrompt.includes('12時投稿の目的'))
+    console.log('systemPrompt includes reflective(じつは):', systemPrompt.includes('本文構成（7時・18時・21時のみ）'))
     console.log('=== End Sayaka prompt debug ===')
 
-    const completion = await openai.chat.completions.create({
-      model: modelName,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: slotKey === 'noon' ? 0.55 : 0.75,
-      response_format: { type: 'json_object' },
-    })
+    // 初回生成
+    let result = await runCompletion(
+      openai,
+      modelName,
+      systemPrompt,
+      userPrompt,
+      slotKey === 'noon' ? 0.55 : 0.75
+    )
+    let attempts = 1
 
-    const raw = completion.choices[0].message.content || '{}'
-    const result = JSON.parse(raw)
+    // 12時のみ：ハード禁止語が出たら1回だけ温度を下げて再生成
+    if (slotKey === 'noon') {
+      const target = `${result.threadsPost || ''}\n${result.instagramPost || ''}\n${result.reelText || ''}`
+      const violations = findNoonViolations(target)
+      if (violations.length > 0) {
+        console.warn('Noon hard-banned tokens detected, regenerating:', violations)
+        const correction = `${userPrompt}\n\n【再生成の指示】\n前回の出力に次の禁止語が含まれていました：${violations.join('、')}。\nこれらを完全に取り除き、感情説明やまとめを一切入れず、情景だけで書き直してください。`
+        result = await runCompletion(openai, modelName, systemPrompt, correction, 0.4)
+        attempts = 2
+      }
+    }
 
-    const hashtagsArray = normalizeHashtags(result.hashtags)
+    const hashtagsArray = normalizeHashtags(result.hashtags, slotKey)
     const isDuplicate = recentPosts.some((p: any) => p.usedHook === result.usedHook)
 
     const formattedHashtags = hashtagsArray.map((h: string) => `#${h}`).join('\n')
@@ -406,6 +584,8 @@ export async function POST(req: NextRequest) {
         slotKey,
         generatedAt: now,
         charCount: fullText.length,
+        attempts,
+        noonMotifs,
       },
     })
   } catch (error: any) {
